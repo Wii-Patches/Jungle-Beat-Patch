@@ -8,9 +8,10 @@
     # SICnOUTBUF, latches it, and enables polling (plus copy-on-vblank) for
     # the channels whose cached si:: type is a confirmed GameCube device.
     #
-    # Everything is a subroutine: the C2-style wrapper in jbpatch.py saves
-    # r3-r31, CR, CTR and LR, calls this, restores them and runs the hooked
-    # instruction. Placeholders in braces are filled in per region.
+    # Everything is a subroutine: the wrapper (wrappers.s) saves r3-r31, CR,
+    # CTR and LR, points r31 at the patch's scratch area, calls this, restores
+    # everything and runs the hooked instruction. Placeholders in braces are
+    # filled in per region.
     #
     # SIGetType is called only for a channel whose cached type is not a
     # confirmed standard pad (8 = no response, 0x80 = probe pending, or
@@ -29,13 +30,12 @@ poller_body:
     stw     0, 0x0c(1)
 
     # remember which channel KPADRead is serving; the feeder reads it
-    lis     12, {SCR_CHAN_HA}
-    stw     3, {SCR_CHAN_LO}(12)
+    stw     3, 0x18(31)             # scratch +0x18: channel
     # ... and count the call: the feeder derives trig/release once per batch
     # of samples, the way the KPAD library does, not once per sample
-    lwz     11, {SCR_SEQ_LO}(12)
+    lwz     11, 0x1C(31)            # scratch +0x1C: call counter
     addi    11, 11, 1
-    stw     11, {SCR_SEQ_LO}(12)
+    stw     11, 0x1C(31)
 
     cmplwi  3, 3
     bgt     probe_done
@@ -54,8 +54,7 @@ do_probe:
     # every frame collided with the pad's polling on real hardware (NOREP|COLL
     # on the polled channel while the other ports had a type transfer in
     # flight), which knocked a connected pad back to "no response".
-    lis     12, {SCR_PROBE_HI}
-    ori     12, 12, {SCR_PROBE_LO}  # per-channel last-probe time base
+    addi    12, 31, 0x00            # scratch +0x00: per-channel last-probe time base
     slwi    4, 3, 2
     mftb    6
     lwzx    7, 12, 4
@@ -87,8 +86,7 @@ probe_done:
     ori     6, 6, {SI_TYPE_LO}      # si:: cached type per channel (4 words)
     li      8, 0                    # channel
     li      9, 8                    # "no response" type
-    lis     12, {SCR_NOREP_HI}
-    ori     12, 12, {SCR_NOREP_LO}  # per-channel consecutive-NOREP counters
+    addi    12, 31, 0x14            # scratch +0x14: per-channel consecutive-NOREP counters
 norep_loop:
     slwi    10, 8, 3
     lis     11, 0x0800              # channel 0's NOREP bit
@@ -188,8 +186,7 @@ ypresent:
     lis     5, {SI_BUSY_HI}
     ori     5, 5, {SI_BUSY_LO}
     lwz     6, 0(5)                 # si:: global transfer-busy flag; -1 = idle
-    lis     7, {SCR_WD_HI}
-    ori     7, 7, {SCR_WD_LO}       # time base when busy began
+    addi    7, 31, 0x20             # scratch +0x20: time base when busy began
     cmpwi   6, -1
     bne     wd_busy
     li      8, 0

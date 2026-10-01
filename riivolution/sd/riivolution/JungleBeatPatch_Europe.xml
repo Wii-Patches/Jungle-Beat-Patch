@@ -1,0 +1,38 @@
+<wiidisc version="1">
+  <id game="R49"><region type="P" /></id>
+  <options>
+    <section name="Donkey Kong Jungle Beat">
+      <option name="Controllers" default="1">
+        <choice name="GameCube / Bongos + Classic Controller"><patch id="jb_both" /></choice>
+        <choice name="GameCube controller / DK Bongos"><patch id="jb_gc" /></choice>
+        <choice name="Classic Controller"><patch id="jb_cc" /></choice>
+      </option>
+    </section>
+  </options>
+  <patch id="jb_both">
+    <memory offset="0x80001820" valuefile="/JungleBeatPatch/R49P01_both.bin" />
+    <memory offset="0x8022A500" value="3BE00001" original="3BE00000" />
+    <memory offset="0x8023A00C" value="4BDC83AC" original="28000001" />
+    <memory offset="0x8023A544" value="4BDC7E84" original="D001001C" />
+    <memory offset="0x8023C744" value="4BDC5CAC" original="EC261828" />
+    <memory offset="0x8034C040" value="4BCB6548" original="90030068" />
+    <memory offset="0x8034C3B4" value="4BCB6054" original="9421FFB0" />
+    <memory offset="0x8034D510" value="4BCB4374" original="9421FFC0" />
+    <memory offset="0x8034E4A4" value="4BCB337C" original="9421FEF0" />
+  </patch>
+  <patch id="jb_gc">
+    <memory offset="0x80001820" valuefile="/JungleBeatPatch/R49P01_gc.bin" />
+    <memory offset="0x8034D510" value="4BCB4374" original="9421FFC0" />
+    <memory offset="0x8034E4A4" value="4BCB337C" original="9421FEF0" />
+  </patch>
+  <patch id="jb_cc">
+    <memory offset="0x80001820" valuefile="/JungleBeatPatch/R49P01_cc.bin" />
+    <memory offset="0x8022A500" value="3BE00001" original="3BE00000" />
+    <memory offset="0x8023A00C" value="4BDC7814" original="28000001" />
+    <memory offset="0x8023A544" value="4BDC72EC" original="D001001C" />
+    <memory offset="0x8023C744" value="4BDC5114" original="EC261828" />
+    <memory offset="0x8034C040" value="4BCB59B0" original="90030068" />
+    <memory offset="0x8034C3B4" value="4BCB54BC" original="9421FFB0" />
+    <memory offset="0x8034D510" value="4BCB4418" original="9421FFC0" />
+  </patch>
+</wiidisc>

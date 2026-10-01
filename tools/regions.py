@@ -6,8 +6,7 @@ against the other two DOLs; each match was unique. The Classic Controller
 hook sites come straight from Vague Rant's per-region Gecko codes.
 """
 
-SCRATCH = 0x80001820        # start of the patch's DOL text section
-SCRATCH_BYTES = 0x180       # zeroed data at the front of the section
+TEXT_ADDRESS = 0x80001820   # start of the patch's DOL text section
 TEXT_LIMIT = 0x80003000     # the OS's low-memory globals start here
 
 
@@ -25,7 +24,7 @@ class Region:
 REGIONS = {
     'R49E01': Region(
         'R49E01', 'USA', 'R49E01.ini',
-        kpad_read=0x8034DDE4,           # KPADReadEx: after KPADRead's two `li` + `b`
+        kpad_read=0x8034DDE4,
         si_state=0x804770A0,            # si:: busy flag, SIPOLL shadow, types at +0x18
         si_gettype=0x8031B940,
         os_disable=0x803118F8,

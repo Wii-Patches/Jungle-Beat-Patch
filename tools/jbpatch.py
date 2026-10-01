@@ -20,7 +20,7 @@ import sys
 
 from dol import Dol
 from gecko import parse
-from regions import KPAD_READ_PREIMAGE, REGIONS, SCRATCH, SCRATCH_BYTES, TEXT_LIMIT
+from regions import KPAD_READ_PREIMAGE, REGIONS, TEXT_ADDRESS, TEXT_LIMIT
 
 if getattr(sys, 'frozen', False):
     HERE = os.path.join(sys._MEIPASS, 'tools')
@@ -56,9 +56,13 @@ def load_gecko(region):
 
 
 def load_blob(region):
-    data = json.load(open(BLOBS))
-    entry = data['regions'][region.disc_id]
-    return ([int(w, 16) for w in entry['words']], entry['symbols'], data['base'])
+    entry = json.load(open(BLOBS))['regions'][region.disc_id]
+    return [int(w, 16) for w in entry['words']], entry['symbols']
+
+
+def lis_ori(value):
+    """`lis r0,hi` / `ori r0,r0,lo` words that load `value` into r0."""
+    return 0x3C000000 | value >> 16, 0x60000000 | value & 0xFFFF
 
 
 def detect_region(dol, disc_id=None):
@@ -81,86 +85,83 @@ def detect_region(dol, disc_id=None):
                          + '; '.join(problems))
 
 
-def inject(src, dst, disc_id=None, classic=True, gamecube=True):
-    """Patch `src` into `dst`. Returns (text section index, {site: target}, size, region)."""
+class Patch:
+    """Everything the patch puts in memory: a block of code and data at `base`,
+    the instructions that now branch into it, and plain word writes."""
+
+    def __init__(self, base, blob, sites, writes):
+        self.base, self.blob, self.sites, self.writes = base, bytes(blob), sites, writes
+
+    def site_words(self):
+        return {site: branch(site, target) for site, target in self.sites.items()}
+
+
+def make_patch(region, classic=True, gamecube=True, base=TEXT_ADDRESS):
+    """Build the patch for `region` to be placed at `base`."""
     if not (classic or gamecube):
         raise ValueError('nothing to do: enable Classic Controller and/or GameCube support')
-    dol = Dol(src)
-    region = detect_region(dol, disc_id)
     (waddr, wvalue), gecko = load_gecko(region)
-
-    blob = bytearray(SCRATCH_BYTES)
-    sites = {}          # hook site -> where it now branches
-
-    def here():
-        return SCRATCH + len(blob)
-
-    def emit(words):
-        at = here()
-        blob.extend(struct.pack('>%dI' % len(words), *words))
-        return at
-
     dpd_site = gecko['dpd'][0]
-    dpd_gecko_at = None
-    gecko_blocks = []
-    if classic:
-        # place the Gecko bodies after the GC half so its size is known first
-        pass
+    blob = bytearray()
+    sites, writes = {}, []
 
-    gc_words = None
-    if gamecube:
-        gc_words, sym, base = load_blob(region)
-        assert base == SCRATCH + SCRATCH_BYTES
-        gc_words = list(gc_words)
-        at = emit(gc_words)
-        assert at == base
+    gc_words, sym = load_blob(region) if gamecube else ([], {})
+    gc_words = list(gc_words)
+    gc_size = len(gc_words) * 4
 
-    # Classic Controller bodies
+    # Classic Controller bodies follow the GameCube half
     gecko_at = {}
     if classic:
+        at = base + gc_size
         for name in GECKO_HOOKS:
             site, body = gecko[name]
             body = list(body)
             if body[-1] != 0:
                 raise AssertionError(f'{name}: C2 body does not end with its branch slot')
-            location = here()
-            body[-1] = branch(location + 4 * (len(body) - 1), site + 4)
-            gecko_at[name] = emit(body)
+            body[-1] = branch(at + 4 * (len(body) - 1), site + 4)
+            gecko_at[name] = (at, body)
+            at += 4 * len(body)
+        writes.append((waddr, wvalue))
 
-    # wire up
     if gamecube:
         def idx(name):
-            return (sym[name] - base) // 4
-        # KPADReadEx entry -> poller
+            return sym[name] // 4
         gc_words[idx('poller_orig')] = KPAD_READ_PREIMAGE
-        gc_words[idx('poller_ret')] = branch(sym['poller_ret'], region.kpad_read + 4)
-        sites[region.kpad_read] = sym['poller_entry']
-        # pointer routine -> feeder (-> Classic Controller body -> game)
+        gc_words[idx('poller_hi')], gc_words[idx('poller_lo')] = lis_ori(region.kpad_read + 4)
+        sites[region.kpad_read] = base + sym['poller_entry']
         if classic:
             gc_words[idx('feeder_orig')] = NOP
-            gc_words[idx('feeder_ret')] = branch(sym['feeder_ret'], gecko_at['dpd'])
+            target = gecko_at['dpd'][0]
         else:
             gc_words[idx('feeder_orig')] = GECKO_PREIMAGES[GECKO_HOOKS.index('dpd')]
-            gc_words[idx('feeder_ret')] = branch(sym['feeder_ret'], dpd_site + 4)
-        sites[dpd_site] = sym['feeder_entry']
-        blob[SCRATCH_BYTES:SCRATCH_BYTES + 4 * len(gc_words)] = struct.pack(
-            '>%dI' % len(gc_words), *gc_words)
+            target = dpd_site + 4
+        gc_words[idx('feeder_hi')], gc_words[idx('feeder_lo')] = lis_ori(target)
+        sites[dpd_site] = base + sym['feeder_entry']
+        blob.extend(struct.pack('>%dI' % len(gc_words), *gc_words))
     if classic:
         for name in GECKO_HOOKS:
-            site = gecko[name][0]
-            if name == 'dpd' and gamecube:
-                continue
-            sites[site] = gecko_at[name]
-        dol.write(waddr, struct.pack('>I', wvalue))
+            at, body = gecko_at[name]
+            blob.extend(struct.pack('>%dI' % len(body), *body))
+            if not (name == 'dpd' and gamecube):
+                sites[gecko[name][0]] = at
+    return Patch(base, blob, sites, writes)
 
-    if SCRATCH + len(blob) > TEXT_LIMIT:
-        raise AssertionError(f'injected section ends at 0x{SCRATCH + len(blob):08X}, past '
+
+def inject(src, dst, disc_id=None, classic=True, gamecube=True):
+    """Patch `src` into `dst`. Returns (text section index, {site: target}, size, region)."""
+    dol = Dol(src)
+    region = detect_region(dol, disc_id)
+    patch = make_patch(region, classic, gamecube)
+    if patch.base + len(patch.blob) > TEXT_LIMIT:
+        raise AssertionError(f'injected section ends at 0x{patch.base + len(patch.blob):08X}, past '
                              f'0x{TEXT_LIMIT:08X} (OS low-memory globals)')
-    section = dol.add_text_section(SCRATCH, bytes(blob))
-    for site, target in sites.items():
-        dol.write(site, struct.pack('>I', branch(site, target)))
+    section = dol.add_text_section(patch.base, patch.blob)
+    for addr, value in patch.writes:
+        dol.write(addr, struct.pack('>I', value))
+    for site, value in patch.site_words().items():
+        dol.write(site, struct.pack('>I', value))
     dol.save(dst)
-    return section, sites, len(blob), region
+    return section, patch.sites, len(patch.blob), region
 
 
 if __name__ == '__main__':
@@ -177,6 +178,6 @@ if __name__ == '__main__':
     section, sites, size, region = inject(args.src, args.dst, args.region,
                                           not args.no_classic, not args.no_gamecube)
     print(f'{region}: injected {len(sites)} hooks into text section {section} at '
-          f'0x{SCRATCH:08X} ({size} bytes)')
+          f'0x{TEXT_ADDRESS:08X} ({size} bytes)')
     for site, target in sorted(sites.items()):
         print(f'  0x{site:08X} -> 0x{target:08X}')

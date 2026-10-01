@@ -143,3 +143,29 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Jungle-Beat-Patcher-${{ matrix.target }}.*
+
+  patch-files:
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zip Riivolution patch and Gecko codes
+        run: |
+          (cd riivolution/sd && zip -qr ../../Jungle-Beat-Riivolution.zip .)
+          zip -qr Jungle-Beat-Gecko-Codes-Classic-Controller.zip codes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Jungle-Beat-Patch-Files
+          path: |
+            Jungle-Beat-Riivolution.zip
+            Jungle-Beat-Gecko-Codes-Classic-Controller.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Jungle-Beat-Riivolution.zip
+            Jungle-Beat-Gecko-Codes-Classic-Controller.zip

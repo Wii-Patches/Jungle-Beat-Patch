@@ -98,7 +98,29 @@ black-screens the game.
 ### Play in Dolphin
 
 Boot the patched image, set GameCube Port 1 to *Standard Controller*, *DK
-Bongos* or an adapter, and keep an emulated Wii Remote connected.
+Bongos* or an adapter, and keep an emulated Wii Remote connected. (If you drive
+the pad from a script or a pipe, turn on *Background Input*.)
+
+### Riivolution (no disc patching)
+
+`Jungle-Beat-Riivolution.zip` from the releases page (or `riivolution/sd/` in
+this repo): copy its contents to the root of your SD card. Start the game from
+Riivolution, pick your region's patch and choose *GameCube / Bongos + Classic
+Controller*, *GameCube controller / DK Bongos* or *Classic Controller*. The
+patch writes its code to `0x80001820` from a file in `/JungleBeatPatch` and
+branches the game into it, so it behaves like the patched image. Dolphin can
+load it too (Riivolution patch window). I haven't been able to try this one on a
+console or in Dolphin's Riivolution loader; the bytes are the ones the patcher
+puts in the DOL.
+
+### Gecko codes
+
+`codes/<disc id>.ini` (also `Jungle-Beat-Gecko-Codes-Classic-Controller.zip`)
+are Vague Rant and crediar's Classic Controller codes, ready for Dolphin's
+`GameSettings` folder or a USB loader. There is no Gecko code for the GameCube
+controller / DK Bongos: the code is about 3 KB and a Gecko code handler only
+has room for roughly 1.8 KB of codes, so Dolphin and the loaders drop it. Use
+the patched image or Riivolution for those.
 
 ### Command line
 
@@ -121,7 +143,7 @@ python3 tools/jbpatch.py <retail main.dol> <patched main.dol> [--no-classic] [--
 The patcher needs only Python 3 and `wit`. The GameCube half (`src/`) ships
 prebuilt in `tools/prebuilt/blobs.json`, checked against its source hash by the
 tests. With [devkitPPC](https://devkitpro.org/) installed, `tools/build_blobs.py`
-rebuilds it. Run the tests with `python3 -m unittest discover -s tests`.
+rebuilds it and `tools/make_riivolution.py` regenerates the Riivolution patch. Run the tests with `python3 -m unittest discover -s tests`.
 
 How the patch works is in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 

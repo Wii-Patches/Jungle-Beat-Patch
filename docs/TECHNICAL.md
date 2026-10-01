@@ -11,11 +11,16 @@ section must end before `0x80003000`), and replaces a handful of instructions
 with branches into it. No Gecko code handler is involved.
 
 ```
-0x80001820  scratch: zeroed data (SI poller state, KPAD call counter, debug
-            counters, per-channel feeder state)
-0x800019A0  GameCube half: poller wrapper + poller, feeder wrapper + gc_feed()
+0x80001820  GameCube half: poller wrapper + poller, feeder wrapper + gc_feed(),
+            then its scratch area (zeroed data: SI poller state, KPAD call
+            counter, debug counters, per-channel feeder state)
             Classic Controller half: the six Vague Rant bodies
 ```
+
+The GameCube half is position independent (linked at 0, every reference
+relative to the wrapper, the scratch area found with a `bl`/`mflr`), so the same
+bytes can be dropped anywhere. The wrappers jump back into the game through
+`r0` and `CTR`, which are dead at a function's first instruction.
 
 All three releases run the same game code and the same Wii SDK, only placed at
 other addresses. The USA DOL was analysed in Ghidra; the other two were matched
@@ -100,15 +105,34 @@ function's prologue, so the floating-point registers are not saved, and the
 blob has to build without relocations. Floats are written as IEEE-754 bit
 patterns (`f32_64ths`).
 
-Scratch `+0x28..+0x5F` is a debug block (last SI type, `INBUFH`, `INBUFL`, number
+Scratch `+0x28..+0x5F` (relative to the `scratch` label) is a debug block (last SI type, `INBUFH`, `INBUFL`, number
 of feeder calls, drum-jump / left / right / clap counters) that can be read over
 a debugger without touching the game.
+
+## Riivolution
+
+`tools/make_riivolution.py` writes the same bytes the DOL patch injects as
+`/JungleBeatPatch/<disc id>_<set>.bin` and one XML per region: a
+`<memory valuefile>` at `0x80001820` plus a `<memory value original>` for each
+hook site (the branch into the code, checked against the retail word). There is
+one patch per controller set (GameCube + Classic, GameCube only, Classic only).
+A test fails if the committed files differ from what the script generates.
+
+## Why no Gecko code for the GameCube half
+
+Dolphin's code handler (and the loaders' ones) keep codes in the area from
+`0x800028B8` to `0x80003000`, about 1.8 KB, and silently drop a code that doesn't
+fit. The Classic Controller codes are about 0.75 KB. The GameCube half is about
+3 KB (a 1.2 KB build with `-Os` would still be 2.5 KB with the poller and
+wrappers). A self-installing
+single `C2` body was tried; Dolphin accepted a small `C2` and dropped a 3 KB one,
+which is how the limit was confirmed.
 
 ## Building the blobs
 
 `tools/build_blobs.py` assembles `poller.s` and `wrappers.s`, compiles
 `gc_feed.c` with devkitPPC (`-msoft-float`, `-mno-sdata`, freestanding), links
-them for each region at `0x800019A0`, and writes `tools/prebuilt/blobs.json`
+them for each region (at 0, position independent), and writes `tools/prebuilt/blobs.json`
 with a hash of the sources. `tests/test_patch.py` fails if the hash is stale.
 
 ## How it was checked

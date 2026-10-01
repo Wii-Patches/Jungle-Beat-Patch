@@ -11,14 +11,15 @@
  *
  * Build rules (see tools/build_blobs.py): freestanding, integer only (no FPU,
  * the hook sits before the hooked function's prologue), and no relocations,
- * so no static data. Region constants arrive as -D macros.
+ * so no static data. Region constants arrive as -D macros; the scratch area
+ * is passed in, so the code works wherever it is placed.
  */
 typedef unsigned int u32;
 typedef int s32;
 typedef unsigned char u8;
 
-#ifndef SCRATCH
-#error "SCRATCH, SI_TYPE and BUBBLE_PTR must be defined"
+#if !defined(SI_TYPE) || !defined(BUBBLE_PTR)
+#error "SI_TYPE and BUBBLE_PTR must be defined"
 #endif
 
 #define SI_REG(n)   (((volatile u32 *)0xCD006400)[n])
@@ -127,9 +128,9 @@ static int in_bubble(void)
     return W(p, 8) == 0xC5EAE845u;
 }
 
-void gc_feed(u8 *k)
+void gc_feed(u8 *k, u8 *S)
 {
-    u32 chan = W(SCRATCH, CHAN_OFF);
+    u32 chan = W(S, CHAN_OFF);
     struct state *st;
     u32 type, hi, btn, newb, hold, trig, rel, now;
     u32 add = 0, acc;
@@ -139,16 +140,16 @@ void gc_feed(u8 *k)
 
     if (chan > 3)
         return;
-    st = (struct state *)((u8 *)SCRATCH + STATE_OFF + chan * STATE_SIZE);
+    st = (struct state *)(S + STATE_OFF + chan * STATE_SIZE);
 
     type = ((volatile u32 *)SI_TYPE)[chan];
-    W(SCRATCH, DEBUG_OFF + 0x00) = type;                /* last look at the pad, for debugging */
-    W(SCRATCH, DEBUG_OFF + 0x0C)++;
+    W(S, DEBUG_OFF + 0x00) = type;                /* last look at the pad, for debugging */
+    W(S, DEBUG_OFF + 0x0C)++;
     if ((type & 0x80) || (type & 0x18000000) != 0x08000000)
         goto idle;
     hi = SI_REG(1 + 3 * chan);
-    W(SCRATCH, DEBUG_OFF + 0x04) = hi;
-    W(SCRATCH, DEBUG_OFF + 0x08) = SI_REG(2 + 3 * chan);
+    W(S, DEBUG_OFF + 0x04) = hi;
+    W(S, DEBUG_OFF + 0x08) = SI_REG(2 + 3 * chan);
     if (hi & 0x80000000u)               /* ERRSTAT: nothing answered */
         goto idle;
 
@@ -160,8 +161,8 @@ void gc_feed(u8 *k)
      * trig/release once per KPADRead call, so every sample of a call carries
      * the same edges and the game can read them from whichever it looks at.
      * Do the same: edges are taken against the end of the previous call. */
-    if (st->seq != W(SCRATCH, SEQ_OFF)) {
-        st->seq = W(SCRATCH, SEQ_OFF);
+    if (st->seq != W(S, SEQ_OFF)) {
+        st->seq = W(S, SEQ_OFF);
         st->base_hold = st->last_hold;
         st->newb = btn & ~st->prev_btn;
         st->prev_btn = btn;
@@ -173,19 +174,19 @@ void gc_feed(u8 *k)
                 st->dir = -1;
                 st->move_until = now + BONGO_MOVE;
                 st->hit_l = 0;
-                W(SCRATCH, DEBUG_OFF + 0x14)++;
+                W(S, DEBUG_OFF + 0x14)++;
             }
             if (st->hit_r && now - st->hit_r > BONGO_JOIN) {
                 st->dir = 1;
                 st->move_until = now + BONGO_MOVE;
                 st->hit_r = 0;
-                W(SCRATCH, DEBUG_OFF + 0x18)++;
+                W(S, DEBUG_OFF + 0x18)++;
             }
             if (st->newb & (PAD_B | PAD_Y))     st->hit_l = now | 1;
             if (st->newb & (PAD_A | PAD_X))     st->hit_r = now | 1;
             if (st->hit_l && st->hit_r) {
                 st->jump_until = now + BONGO_JUMP;
-                W(SCRATCH, DEBUG_OFF + 0x10)++;
+                W(S, DEBUG_OFF + 0x10)++;
                 st->hit_l = st->hit_r = 0;
                 st->move_until = 0;
             }
@@ -235,7 +236,7 @@ void gc_feed(u8 *k)
     acc = 0;
     if (swing && st->seq != st->swing_seq) {
         st->swing_seq = st->seq;
-        W(SCRATCH, DEBUG_OFF + 0x1C)++;
+        W(S, DEBUG_OFF + 0x1C)++;
     }
     if (swing) {
         acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;

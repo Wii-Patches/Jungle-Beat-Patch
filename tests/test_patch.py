@@ -12,9 +12,10 @@ sys.path.insert(0, os.path.join(HERE, '..', 'tools'))
 
 import build_blobs                      # noqa: E402
 import gecko                            # noqa: E402
+import make_riivolution                 # noqa: E402
 import jbpatch                          # noqa: E402
 from dol import Dol                     # noqa: E402
-from regions import REGIONS, SCRATCH, TEXT_LIMIT  # noqa: E402
+from regions import REGIONS, TEXT_ADDRESS as SCRATCH, TEXT_LIMIT  # noqa: E402
 
 TEXT_START, TEXT_END = 0x80004000, 0x80360000
 
@@ -90,6 +91,18 @@ class PatchTests(unittest.TestCase):
                 jbpatch.inject(src, dst, disc_id='R49P01')          # wrong region
             with self.assertRaises(ValueError):
                 jbpatch.inject(src, dst, classic=False, gamecube=False)
+
+    def test_riivolution_files_are_current(self):
+        sd = os.path.join(HERE, '..', 'riivolution', 'sd')
+        with tempfile.TemporaryDirectory() as tmp:
+            for region in REGIONS.values():
+                make_riivolution.write_region(region, tmp)
+            for root, _, files in os.walk(tmp):
+                for name in files:
+                    fresh = os.path.join(root, name)
+                    shipped = os.path.join(sd, os.path.relpath(fresh, tmp))
+                    self.assertEqual(open(fresh, 'rb').read(), open(shipped, 'rb').read(),
+                                     f'{shipped} is stale: run tools/make_riivolution.py')
 
     def test_gecko_files(self):
         for region in REGIONS.values():
