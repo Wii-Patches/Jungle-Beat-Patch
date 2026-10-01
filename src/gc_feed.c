@@ -9,6 +9,10 @@
  * the Nunchuk stick, and the Wii Remote / Nunchuk acceleration the game
  * reads for claps and shakes.
  *
+ * Without a Wii Remote the KPAD library has nothing to read and returns an
+ * error, so gc_read() answers KPADRead itself: it fills the game's status
+ * buffer with the same Wii Remote + Nunchuk statuses and returns their count.
+ *
  * Build rules (see tools/build_blobs.py): freestanding, integer only (no FPU,
  * the hook sits before the hooked function's prologue), and no relocations,
  * so no static data. Region constants arrive as -D macros; the scratch area
@@ -18,8 +22,8 @@ typedef unsigned int u32;
 typedef int s32;
 typedef unsigned char u8;
 
-#if !defined(SI_TYPE) || !defined(BUBBLE_PTR)
-#error "SI_TYPE and BUBBLE_PTR must be defined"
+#if !defined(SI_TYPE) || !defined(BUBBLE_PTR) || !defined(WPAD_TBL) || !defined(CONNECT_CB) || !defined(KPAD_BASE)
+#error "SI_TYPE, BUBBLE_PTR, WPAD_TBL, CONNECT_CB and KPAD_BASE must be defined"
 #endif
 
 #define SI_REG(n)   (((volatile u32 *)0xCD006400)[n])
@@ -28,6 +32,7 @@ typedef unsigned char u8;
 /* scratch layout, mirrored in tools/jbpatch.py */
 #define CHAN_OFF    0x18
 #define SEQ_OFF     0x1C                /* bumped by the poller once per KPADRead call */
+#define FAKED_OFF   0x24                /* we told the game a Wii Remote + Nunchuk is connected */
 #define DEBUG_OFF   0x28                /* type, INBUFH, INBUFL, call count, event counters */
 #define STATE_OFF   0x60
 #define STATE_SIZE  0x40
@@ -128,22 +133,26 @@ static int in_bubble(void)
     return W(p, 8) == 0xC5EAE845u;
 }
 
-void gc_feed(u8 *k, u8 *S)
-{
-    u32 chan = W(S, CHAN_OFF);
-    struct state *st;
-    u32 type, hi, btn, newb, hold, trig, rel, now;
-    u32 add = 0, acc;
-    s32 sx = 0, sy = 0;
-    int swing = 0, shake = 0, bongo;
-    u8 libdev = k[0x5C];
+struct pad {
+    u32 add;                            /* Wii Remote / Nunchuk hold bits to add */
+    s32 sx, sy;                         /* Nunchuk stick, -64..64 */
+    int swing, shake, bongo;
+    u32 libdev;                         /* extension the library reported (feeder only) */
+};
 
-    if (chan > 3)
-        return;
-    st = (struct state *)(S + STATE_OFF + chan * STATE_SIZE);
+/* Read the pad on `chan` and work out what it means; once per call of the
+ * function it is used from. Returns 0 if no pad is answering. */
+static int read_pad(u8 *S, u32 chan, struct pad *p)
+{
+    struct state *st = (struct state *)(S + STATE_OFF + chan * STATE_SIZE);
+    u32 type, hi, btn, now;
+
+    p->add = 0;
+    p->sx = p->sy = 0;
+    p->swing = p->shake = 0;
 
     type = ((volatile u32 *)SI_TYPE)[chan];
-    W(S, DEBUG_OFF + 0x00) = type;                /* last look at the pad, for debugging */
+    W(S, DEBUG_OFF + 0x00) = type;                      /* last look at the pad, for debugging */
     W(S, DEBUG_OFF + 0x0C)++;
     if ((type & 0x80) || (type & 0x18000000) != 0x08000000)
         goto idle;
@@ -155,7 +164,7 @@ void gc_feed(u8 *k, u8 *S)
 
     now = timebase();
     btn = (hi >> 16) & 0x1FFF;
-    bongo = (hi & 0xFFFF) == 0;         /* a pad's sticks rest near 0x80 */
+    p->bongo = (hi & 0xFFFF) == 0;      /* a pad's sticks rest near 0x80 */
 
     /* The KPAD library hands the game one status per sample but works out
      * trig/release once per KPADRead call, so every sample of a call carries
@@ -166,7 +175,7 @@ void gc_feed(u8 *k, u8 *S)
         st->base_hold = st->last_hold;
         st->newb = btn & ~st->prev_btn;
         st->prev_btn = btn;
-        if (bongo) {
+        if (p->bongo) {
             /* DK Bongos: A/X are the right drum, B/Y the left, R is the clap
              * microphone. A drum hit runs DK for a moment; both drums
              * together jump (and confirm in menus). */
@@ -192,55 +201,55 @@ void gc_feed(u8 *k, u8 *S)
             }
         }
     }
-    newb = st->newb;
 
-    if (!bongo) {
-        if (btn & PAD_A)                add |= WM_A;
-        if (btn & (PAD_B | PAD_R | PAD_Z)) add |= WM_B;
-        if (btn & PAD_L)                add |= NC_Z;
-        if (btn & PAD_X)                shake = 1;
-        if (newb & PAD_Y)               swing = 1;
-        if (btn & PAD_UP)               add |= WM_UP;
-        if (btn & PAD_DOWN)             add |= WM_DOWN;
-        if (btn & PAD_LEFT)             add |= WM_LEFT;
-        if (btn & PAD_RIGHT)            add |= WM_RIGHT;
+    if (!p->bongo) {
+        if (btn & PAD_A)                p->add |= WM_A;
+        if (btn & (PAD_B | PAD_R | PAD_Z)) p->add |= WM_B;
+        if (btn & PAD_L)                p->add |= NC_Z;
+        if (btn & PAD_X)                p->shake = 1;
+        if (st->newb & PAD_Y)           p->swing = 1;
+        if (btn & PAD_UP)               p->add |= WM_UP;
+        if (btn & PAD_DOWN)             p->add |= WM_DOWN;
+        if (btn & PAD_LEFT)             p->add |= WM_LEFT;
+        if (btn & PAD_RIGHT)            p->add |= WM_RIGHT;
         if (btn & PAD_START) {
             if ((btn & (PAD_L | PAD_R)) == (PAD_L | PAD_R))
-                add |= WM_HOME;
+                p->add |= WM_HOME;
             else
-                add |= WM_PLUS | WM_TWO;
+                p->add |= WM_PLUS | WM_TWO;
         }
-        sx = axis((hi >> 8) & 0xFF);
-        sy = axis(hi & 0xFF);
+        p->sx = axis((hi >> 8) & 0xFF);
+        p->sy = axis(hi & 0xFF);
     } else {
         if ((s32)(st->jump_until - now) > 0)
-            add |= WM_A;
+            p->add |= WM_A;
         if ((s32)(st->move_until - now) > 0)
-            sx = st->dir * 64;
-        if (newb & PAD_R)               swing = 1;
-        if (btn & PAD_START)            add |= WM_PLUS | WM_TWO;
+            p->sx = st->dir * 64;
+        if (st->newb & PAD_R)           p->swing = 1;
+        if (btn & PAD_START)            p->add |= WM_PLUS | WM_TWO;
     }
+    return 1;
 
-    hold = W(k, 0x00) | add;
-    trig = hold & ~st->base_hold;
-    rel = st->base_hold & ~hold;
-    st->last_hold = hold;
-    W(k, 0x00) = hold;
-    W(k, 0x04) = trig;
-    W(k, 0x08) = rel;
+idle:
+    st->prev_btn = 0;
+    st->newb = 0;
+    st->hit_l = st->hit_r = 0;
+    st->move_until = st->jump_until = 0;
+    return 0;
+}
 
-    /* Clap and shake as acceleration: the same square wave the Classic
-     * Controller hooks use (three samples one way, one at rest, three the
-     * other way), because the game counts a shake from the change between
-     * frames and the library delivers several samples per frame. */
-    acc = 0;
-    if (swing && st->seq != st->swing_seq) {
-        st->swing_seq = st->seq;
-        W(S, DEBUG_OFF + 0x1C)++;
-    }
-    if (swing) {
+/* Clap and shake as acceleration: the same square wave the Classic
+ * Controller hooks use (three samples one way, one at rest, three the other
+ * way), because the game counts a shake from the change between frames and
+ * the library delivers several samples per frame. A single clap is one call's
+ * worth of the same value. */
+static u32 motion(struct state *st, const struct pad *p)
+{
+    u32 acc = 0;
+
+    if (p->swing) {
         acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;
-    } else if (shake) {
+    } else if (p->shake) {
         if (++st->shake_cnt <= 3) {
             acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;
         } else {
@@ -250,42 +259,158 @@ void gc_feed(u8 *k, u8 *S)
     } else {
         st->shake_cnt = 0;
     }
+    return acc;
+}
+
+static void count_clap(u8 *S, struct state *st, const struct pad *p)
+{
+    if (p->swing && st->swing_seq != st->seq) {
+        st->swing_seq = st->seq;
+        W(S, DEBUG_OFF + 0x1C)++;
+        st->shake_neg ^= 1;             /* the next clap swings the other way, so clapping to
+                                           a beat shakes the controller too */
+    }
+}
+
+void gc_feed(u8 *k, u8 *S)
+{
+    u32 chan = W(S, CHAN_OFF);
+    struct state *st;
+    struct pad p;
+    u32 hold, acc;
+
+    if (chan > 3)
+        return;
+    st = (struct state *)(S + STATE_OFF + chan * STATE_SIZE);
+    p.libdev = k[0x5C];
+    if (!read_pad(S, chan, &p)) {
+        st->last_hold = W(k, 0x00);
+        st->base_hold = st->last_hold;
+        return;
+    }
+
+    hold = W(k, 0x00) | p.add;
+    W(k, 0x00) = hold;
+    W(k, 0x04) = hold & ~st->base_hold;
+    W(k, 0x08) = st->base_hold & ~hold;
+    st->last_hold = hold;
+
+    acc = motion(st, &p);
+    count_clap(S, st, &p);
 
     /* A pad owns the motion inputs outright. Bongos have no sticks and no
      * accelerometer, so the Wii Remote (and Nunchuk, if there is one) keeps
      * working next to them: only claps and drum runs are added on top. */
-    if (!bongo) {
+    if (!p.bongo) {
         if (in_bubble()) {
             /* bubble: the Wii Remote's tilt steers; left stick stands in */
-            W(k, 0x0C) = f32_64ths(-sx);
+            W(k, 0x0C) = f32_64ths(-p.sx);
         } else {
             W(k, 0x0C) = acc;
             W(k, 0x10) = acc;
             W(k, 0x14) = acc;
         }
-    } else if (swing) {
+    } else if (p.swing) {
         W(k, 0x0C) = acc;
         W(k, 0x10) = acc;
         W(k, 0x14) = acc;
     }
-    if (!bongo || swing || libdev != 1) {
+    if (!p.bongo || p.swing || p.libdev != 1) {
         W(k, 0x68) = W(k, 0x0C);        /* Nunchuk acceleration mirrors the Wii Remote */
         W(k, 0x6C) = W(k, 0x10);
         W(k, 0x70) = W(k, 0x14);
     }
-    if (!bongo || sx || libdev != 1) {
-        W(k, 0x60) = f32_64ths(sx);     /* Nunchuk stick */
-        W(k, 0x64) = f32_64ths(sy);
+    if (!p.bongo || p.sx || p.libdev != 1) {
+        W(k, 0x60) = f32_64ths(p.sx);   /* Nunchuk stick */
+        W(k, 0x64) = f32_64ths(p.sy);
     }
     k[0x5C] = 1;                        /* Wii Remote + Nunchuk */
     k[0x5D] = 0;
-    return;
+}
 
-idle:
-    st->prev_btn = 0;
-    st->newb = 0;
-    st->hit_l = st->hit_r = 0;
-    st->move_until = st->jump_until = 0;
-    st->last_hold = W(k, 0x00);
-    st->base_hold = st->last_hold;
+/* What WPADProbe(chan) returns: 0 for a connected remote, -1 for none, -2 if
+ * the channel isn't set up yet. Same reads the library makes. */
+static s32 remote_probe(u32 chan)
+{
+    u8 *blk = *(u8 **)(WPAD_TBL + chan * 4);
+    s32 ret = (s32)W(blk, 0x8BC);
+
+    if (ret != -1) {
+        if (blk[0x8C1] == 0xFD)
+            ret = -1;
+        else if (W(blk, 0x8DC) == 0)
+            ret = -2;
+    }
+    return ret;
+}
+
+/* Is a GameCube pad answering on `chan`? Looks only. */
+static int pad_present(u32 chan)
+{
+    u32 type = ((volatile u32 *)SI_TYPE)[chan];
+
+    if ((type & 0x80) || (type & 0x18000000) != 0x08000000)
+        return 0;
+    return !(SI_REG(1 + 3 * chan) & 0x80000000u);
+}
+
+/* WPADProbe(chan, &type): with no remote but a pad, say a remote with a
+ * Nunchuk is there, so the game doesn't stop to tell the player the Wii Remote
+ * has been disconnected. Returns 1 if it answered (the result is 0). */
+int gc_probe(u32 chan, s32 *type, u8 *S)
+{
+    (void)S;
+    if (chan != 0 || !pad_present(chan) || remote_probe(chan) >= 0)
+        return 0;
+    if (type)
+        *type = 1;
+    return 1;
+}
+
+/* KPADRead(chan, ...) with no Wii Remote connected: the library has nothing to
+ * read, so give it something. Queue two bare Wii Remote samples in the channel's
+ * sample ring -- two, like the library's own readers expect, with the game
+ * looking at the second entry for some things -- and let the library process
+ * them as usual; gc_feed() then turns each one into the pad's status. */
+void gc_inject(u32 chan, u8 *S)
+{
+    u8 *b = (u8 *)KPAD_BASE + chan * 0x5C0;
+    u32 total, idx, cnt, i;
+
+    if (chan != 0)
+        return;
+    if (remote_probe(chan) >= 0) {
+        W(S, FAKED_OFF) = 0;            /* a real remote is there: the feeder alone handles it */
+        return;
+    }
+    if (!pad_present(chan)) {
+        if (W(S, FAKED_OFF)) {          /* the pad went away: the remote did too */
+            W(S, FAKED_OFF) = 0;
+            ((void (*)(u32, s32))CONNECT_CB)(chan, -1);
+        }
+        return;
+    }
+    if (!W(S, FAKED_OFF)) {
+        /* Tell the game what the library would on a connection, so its own
+         * "controller connected" state is right and it doesn't stop to say the
+         * Wii Remote has been disconnected. */
+        W(S, FAKED_OFF) = 1;
+        ((void (*)(u32, s32))CONNECT_CB)(chan, 0);
+    }
+    total = W(b, 0xC0) + 0x10;          /* ring size: 16 inline slots plus the extra array */
+    idx = b[0x13A];
+    cnt = b[0x13B];
+    if (cnt >= 2 || idx >= total)
+        return;
+    for (i = 0; i < 2; i++) {
+        u8 *s = idx < 0x10 ? b + 0x13C + idx * 0x38 : *(u8 **)(b + 0xBC) + (idx - 0x10) * 0x38;
+        u32 j;
+        for (j = 0; j < 0x38; j += 4)
+            W(s, j) = 0;
+        s[7] = 0x68;                    /* what a resting remote reports on Z */
+        s[0x36] = 1;
+        idx = idx + 1 >= total ? 0 : idx + 1;
+    }
+    b[0x13A] = idx;
+    b[0x13B] = cnt + 2;
 }

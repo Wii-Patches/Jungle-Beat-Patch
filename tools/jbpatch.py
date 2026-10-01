@@ -20,7 +20,7 @@ import sys
 
 from dol import Dol
 from gecko import parse
-from regions import KPAD_READ_PREIMAGE, REGIONS, TEXT_ADDRESS, TEXT_LIMIT
+from regions import KPAD_READ_PREIMAGE, REGIONS, WPAD_PROBE_PREIMAGE, TEXT_ADDRESS, TEXT_LIMIT
 
 if getattr(sys, 'frozen', False):
     HERE = os.path.join(sys._MEIPASS, 'tools')
@@ -71,7 +71,8 @@ def detect_region(dol, disc_id=None):
     problems = []
     for region in candidates:
         (waddr, _), hooks = load_gecko(region)
-        checks = [(waddr, GECKO_WRITE_PREIMAGE), (region.kpad_read, KPAD_READ_PREIMAGE)]
+        checks = [(waddr, GECKO_WRITE_PREIMAGE), (region.kpad_read, KPAD_READ_PREIMAGE),
+               (region.wpad_probe, WPAD_PROBE_PREIMAGE)]
         checks += [(hooks[n][0], p) for n, p in zip(GECKO_HOOKS, GECKO_PREIMAGES)]
         bad = [(a, word(dol, a), want) for a, want in checks if word(dol, a) != want]
         if not bad:
@@ -137,6 +138,9 @@ def make_patch(region, classic=True, gamecube=True, base=TEXT_ADDRESS):
             target = dpd_site + 4
         gc_words[idx('feeder_hi')], gc_words[idx('feeder_lo')] = lis_ori(target)
         sites[dpd_site] = base + sym['feeder_entry']
+        gc_words[idx('probe_orig')] = WPAD_PROBE_PREIMAGE
+        gc_words[idx('probe_hi')], gc_words[idx('probe_lo')] = lis_ori(region.wpad_probe + 4)
+        sites[region.wpad_probe] = base + sym['probe_entry']
         blob.extend(struct.pack('>%dI' % len(gc_words), *gc_words))
     if classic:
         for name in GECKO_HOOKS:

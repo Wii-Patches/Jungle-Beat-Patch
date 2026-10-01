@@ -29,6 +29,10 @@ REGIONS = {
         si_gettype=0x8031B940,
         os_disable=0x803118F8,
         os_restore=0x80311920,
+        wpad_probe=0x80341B88,          # WPADProbe
+        wpad_tbl=0x804C1AB0,            # per-channel WPAD control block pointers
+        connect_cb=0x802398C0,          # the game's WPAD connect callback (chan, result)
+        kpad_base=0x804C5248,           # KPAD library state, 0x5C0 per channel
         bubble_ptr=0x80C21040,          # EventDirector data pointer (Vague Rant)
     ),
     'R49P01': Region(
@@ -38,6 +42,10 @@ REGIONS = {
         si_gettype=0x8031C000,
         os_disable=0x80311FB8,
         os_restore=0x80311FE0,
+        wpad_probe=0x80342248,
+        wpad_tbl=0x804C55B0,
+        connect_cb=0x80239F00,
+        kpad_base=0x804C8D48,
         bubble_ptr=0x80C24B80,
     ),
     'R49J01': Region(
@@ -47,8 +55,13 @@ REGIONS = {
         si_gettype=0x8031A800,
         os_disable=0x803107B8,
         os_restore=0x803107E0,
+        wpad_probe=0x80340A48,
+        wpad_tbl=0x804C0DF0,
+        connect_cb=0x802388F0,
+        kpad_base=0x804C4588,
         bubble_ptr=0x80C20360,
     ),
 }
 
 KPAD_READ_PREIMAGE = 0x9421FEF0         # stwu r1,-0x110(r1)
+WPAD_PROBE_PREIMAGE = 0x9421FFF0        # stwu r1,-0x10(r1)

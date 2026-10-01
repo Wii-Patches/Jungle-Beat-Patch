@@ -34,6 +34,9 @@ Classic Controller hook sites come from the per-region Gecko codes.
 | KPAD pointer (DPD) routine | `0x8034CE50` | `0x8034D510` | `0x8034BD10` |
 | `si::SIGetType` | `0x8031B940` | `0x8031C000` | `0x8031A800` |
 | `si::` state (busy flag, SIPOLL shadow, types at `+0x18`) | `0x804770A0` | `0x8047ABA0` | `0x804763E0` |
+| `WPADProbe` | `0x80341B88` | `0x80342248` | `0x80340A48` |
+| KPAD library state (`0x5C0` per channel) | `0x804C5248` | `0x804C8D48` | `0x804C4588` |
+| game's WPAD connect callback | `0x802398C0` | `0x80239F00` | `0x802388F0` |
 
 ## Classic Controller
 
@@ -84,6 +87,33 @@ the sample's `KPADStatus`:
   0, so the game's own Nunchuk check passes without any game patch.
 - The Nunchuk stick (`+0x60`/`+0x64`) and acceleration (`+0x68..+0x70`), and
   the Wii Remote acceleration (`+0x0C..+0x14`).
+
+#### Without a Wii Remote
+
+With no remote the KPAD library has nothing to read, and the game decides a
+controller is gone from `WPADProbe` and from its own connect callbacks. Three
+pieces cover that, modelled on the City Folk GameCube patch in this author's
+other repository:
+
+- `WPADProbe` is hooked: with a pad answering and the library reporting no
+  remote (the same two reads it makes of the WPAD control block), it returns 0
+  and says a Nunchuk is attached.
+- `gc_inject()` runs at the start of every `KPADReadEx`: it tells the game's
+  connect callback once that a remote has connected (so the "Communications with
+  the Wii Remote have been interrupted" dialog never comes), and queues two bare
+  Wii Remote samples in the channel's sample ring (idle accelerometer, no
+  buttons; the ring is 16 inline slots plus an extra array, with a write index
+  and queued count in the channel's KPAD state). The library then processes them
+  exactly as it would a real remote's, and the feeder turns each into the pad's
+  status. An earlier attempt answered `KPADRead` directly with hand-built
+  statuses; every byte matched what the library produces, but the game's
+  "Shake your controllers!" prompt never completed with it and does with the
+  library-processed samples.
+- A real remote connecting later is noticed and takes over; unplugging the pad
+  tells the game the remote has gone.
+
+The game has no multiplayer mode (its four-channel input loop is generic), so
+ports 2-4 are not wired up.
 
 Claps and shakes are the same square wave the Classic Controller hooks make:
 three samples one way, one at rest, three the other way, because the game
@@ -155,6 +185,8 @@ stub for reading memory:
   (`X`/`Y`) all count as designed (via the debug counters), and the bongos
   get through the menus and into the first level with a Dolphin Wii Remote
   doing the shake;
+- with the Dolphin Wii Remote disabled, the GameCube pad and the bongos get through the title, file
+  select, the shake prompt and into the first level and drive DK there;
 - the Classic Controller path plays through the same screens, on its own and
   chained with the GameCube feeder.
 

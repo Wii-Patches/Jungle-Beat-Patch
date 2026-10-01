@@ -12,17 +12,19 @@
   <patch id="jb_both">
     <memory offset="0x80001820" valuefile="/JungleBeatPatch/R49E01_both.bin" />
     <memory offset="0x80229EC0" value="3BE00001" original="3BE00000" />
-    <memory offset="0x802399CC" value="4BDC89EC" original="28000001" />
-    <memory offset="0x80239F04" value="4BDC84C4" original="D001001C" />
-    <memory offset="0x8023C104" value="4BDC62EC" original="EC261828" />
-    <memory offset="0x8034B980" value="4BCB6C08" original="90030068" />
-    <memory offset="0x8034BCF4" value="4BCB6714" original="9421FFB0" />
-    <memory offset="0x8034CE50" value="4BCB4A34" original="9421FFC0" />
+    <memory offset="0x802399CC" value="4BDC8D7C" original="28000001" />
+    <memory offset="0x80239F04" value="4BDC8854" original="D001001C" />
+    <memory offset="0x8023C104" value="4BDC667C" original="EC261828" />
+    <memory offset="0x80341B88" value="4BCBFD6C" original="9421FFF0" />
+    <memory offset="0x8034B980" value="4BCB6F98" original="90030068" />
+    <memory offset="0x8034BCF4" value="4BCB6AA4" original="9421FFB0" />
+    <memory offset="0x8034CE50" value="4BCB4A40" original="9421FFC0" />
     <memory offset="0x8034DDE4" value="4BCB3A3C" original="9421FEF0" />
   </patch>
   <patch id="jb_gc">
     <memory offset="0x80001820" valuefile="/JungleBeatPatch/R49E01_gc.bin" />
-    <memory offset="0x8034CE50" value="4BCB4A34" original="9421FFC0" />
+    <memory offset="0x80341B88" value="4BCBFD6C" original="9421FFF0" />
+    <memory offset="0x8034CE50" value="4BCB4A40" original="9421FFC0" />
     <memory offset="0x8034DDE4" value="4BCB3A3C" original="9421FEF0" />
   </patch>
   <patch id="jb_cc">

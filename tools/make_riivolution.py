@@ -15,7 +15,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import jbpatch                                      # noqa: E402
-from regions import REGIONS, TEXT_ADDRESS           # noqa: E402
+from regions import REGIONS, TEXT_ADDRESS, WPAD_PROBE_PREIMAGE           # noqa: E402
 
 ROOT = os.path.join(HERE, '..')
 FOLDER = 'JungleBeatPatch'
@@ -31,7 +31,8 @@ CHOICES = (
 def originals(region):
     """Retail word at every address the patch overwrites."""
     (waddr, _), hooks = jbpatch.load_gecko(region)
-    out = {waddr: jbpatch.GECKO_WRITE_PREIMAGE, region.kpad_read: jbpatch.KPAD_READ_PREIMAGE}
+    out = {waddr: jbpatch.GECKO_WRITE_PREIMAGE, region.kpad_read: jbpatch.KPAD_READ_PREIMAGE,
+           region.wpad_probe: WPAD_PROBE_PREIMAGE}
     for name, pre in zip(jbpatch.GECKO_HOOKS, jbpatch.GECKO_PREIMAGES):
         out[hooks[name][0]] = pre
     return out

@@ -62,7 +62,8 @@ def build(region, tmp):
     run(BIN + 'gcc', '-O2', '-mcpu=750', '-meabi', '-msoft-float', '-mno-sdata',
         '-ffreestanding', '-fno-builtin', '-fno-common', '-fno-asynchronous-unwind-tables',
         '-fno-exceptions', '-DSI_TYPE=0x%08X' % (r.si_state + 0x18),
-        '-DBUBBLE_PTR=0x%08X' % r.bubble_ptr, '-c', os.path.join(SRC, 'gc_feed.c'), '-o', o)
+        '-DBUBBLE_PTR=0x%08X' % r.bubble_ptr, '-DWPAD_TBL=0x%08X' % r.wpad_tbl,
+        '-DCONNECT_CB=0x%08X' % r.connect_cb, '-DKPAD_BASE=0x%08X' % r.kpad_base, '-c', os.path.join(SRC, 'gc_feed.c'), '-o', o)
     objs['feed'] = o
 
     elf, binf = os.path.join(tmp, 'gc.elf'), os.path.join(tmp, 'gc.bin')
@@ -80,7 +81,8 @@ def build(region, tmp):
         value, _, name = line.split()
         syms[name] = int(value, 16)
     need = ('poller_entry', 'poller_orig', 'poller_hi', 'poller_lo', 'feeder_entry',
-            'feeder_orig', 'feeder_hi', 'feeder_lo', 'scratch')
+            'feeder_orig', 'feeder_hi', 'feeder_lo', 'probe_entry', 'probe_orig', 'probe_hi',
+            'probe_lo', 'scratch')
     return {
         'words': ['%08X' % w for w in struct.unpack('>%dI' % (len(data) // 4), data)],
         'symbols': {n: syms[n] for n in need},

@@ -18,11 +18,12 @@ The patcher lets you pick either or both:
   straight to the game's `main.dol`.
 - **GameCube controller and DK Bongos** — new in this patch.
 
-A Wii Remote must still be connected (it's what the Classic Controller plugs
-into, and the game won't run without one). Nothing needs to be plugged into
-it: with a GameCube controller or bongos in port 1, the game sees a Wii Remote
-with a Nunchuk. Unplug the GameCube controller to go back to the Wii Remote and
-Nunchuk.
+**No Wii Remote needed for the GameCube controller or bongos.** With one in
+port 1 and no Wii Remote connected, the game is told a Wii Remote with a Nunchuk
+is there and plays normally. If a Wii Remote is connected too, it keeps working
+next to the pad (the bongos leave its motion alone; a GameCube controller takes
+over the Nunchuk and motion). Unplug the pad to go back to the Wii Remote and
+Nunchuk. The Classic Controller still needs a Wii Remote to plug into.
 
 ### GameCube controller (port 1)
 
@@ -51,9 +52,10 @@ original GameCube game:
 | Clap | Clap |
 | Start | Pause (+) and hint (2) |
 
-The Wii Remote (and Nunchuk, if you have one) keeps working next to the bongos,
-so you can still shake it for the prompts that ask for it and tilt it to steer
-the bubble.
+With no Wii Remote, clap to a beat for the "Shake your controllers!" prompt:
+each clap swings the opposite way to the last. With a Wii Remote (and Nunchuk, if
+you have one) it keeps working next to the bongos, so you can shake it for that
+prompt and tilt it to steer the bubble.
 
 ### Classic Controller
 
@@ -98,7 +100,7 @@ black-screens the game.
 ### Play in Dolphin
 
 Boot the patched image, set GameCube Port 1 to *Standard Controller*, *DK
-Bongos* or an adapter, and keep an emulated Wii Remote connected. (If you drive
+Bongos* or an adapter. No emulated Wii Remote is needed. (If you drive
 the pad from a script or a pipe, turn on *Background Input*.)
 
 ### Riivolution (no disc patching)
@@ -130,11 +132,11 @@ python3 tools/jbpatch.py <retail main.dol> <patched main.dol> [--no-classic] [--
 
 ## Known limitations
 
-- A Wii Remote has to be connected. (The patch changes what the game reads,
-  not whether the Wii thinks a remote is paired.)
-- The game is single player, so only the controller in GameCube port 1 matters.
-- The shake prompts are one button on a GameCube controller (X) and not
-  available on the bongos alone — shake the Wii Remote for those.
+- The game is single player (it has no multiplayer mode), so only the controller
+  in GameCube port 1 is used; ports 2-4 are ignored.
+- Without a Wii Remote there is no pointer, so the HOME Menu (L + R + Start on a
+  GameCube controller) can't be steered.
+- On bongos alone the "Shake your controllers!" prompt takes rhythmic clapping.
 - Hot-plugging the GameCube controller is handled, but I've only been able to
   test it in Dolphin. Reports from a real Wii are welcome.
 

@@ -25,7 +25,8 @@ def skeleton(region):
     size = TEXT_END - TEXT_START
     text = bytearray(size)
     (waddr, _), hooks = jbpatch.load_gecko(region)
-    sites = [(waddr, jbpatch.GECKO_WRITE_PREIMAGE), (region.kpad_read, jbpatch.KPAD_READ_PREIMAGE)]
+    sites = [(waddr, jbpatch.GECKO_WRITE_PREIMAGE), (region.kpad_read, jbpatch.KPAD_READ_PREIMAGE),
+             (region.wpad_probe, jbpatch.WPAD_PROBE_PREIMAGE)]
     sites += [(hooks[n][0], p) for n, p in zip(jbpatch.GECKO_HOOKS, jbpatch.GECKO_PREIMAGES)]
     for addr, word in sites:
         struct.pack_into('>I', text, addr - TEXT_START, word)
@@ -52,7 +53,7 @@ class PatchTests(unittest.TestCase):
 
     def test_every_region_and_option_set(self):
         for region in REGIONS.values():
-            for classic, gamecube, hooks in ((True, True, 7), (True, False, 6), (False, True, 2)):
+            for classic, gamecube, hooks in ((True, True, 8), (True, False, 6), (False, True, 3)):
                 with self.subTest(region=region.disc_id, classic=classic, gamecube=gamecube):
                     (section, sites, size, found), out, _ = self.patch(
                         region, classic=classic, gamecube=gamecube)

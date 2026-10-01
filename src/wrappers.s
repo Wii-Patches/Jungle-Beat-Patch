@@ -14,6 +14,7 @@
     .text
     .globl  poller_entry, poller_orig, poller_hi, poller_lo
     .globl  feeder_entry, feeder_orig, feeder_hi, feeder_lo, scratch
+    .globl  probe_entry, probe_orig, probe_hi, probe_lo
 
 poller_entry:
     stwu    1, -0xA0(1)
@@ -28,6 +29,10 @@ poller_entry:
 1:  mflr    31
     addi    31, 31, scratch - 1b
     bl      poller_body
+    # No Wii Remote and a pad answering? Give the library samples to chew on.
+    lwz     3, 0x10(1)
+    mr      4, 31
+    bl      gc_inject
     lwz     0, 0x90(1)
     mtctr   0
     lwz     0, 0x8C(1)
@@ -75,10 +80,54 @@ feeder_lo:
     mtctr   0
     bctr
 
+probe_entry:
+    stwu    1, -0xA0(1)
+    stmw    3, 0x10(1)
+    mflr    0
+    stw     0, 0x88(1)
+    mfcr    0
+    stw     0, 0x8C(1)
+    mfctr   0
+    stw     0, 0x90(1)
+    bl      1f
+1:  mflr    31
+    addi    5, 31, scratch - 1b
+    bl      gc_probe
+    cmpwi   3, 0
+    beq     2f
+    li      0, 0
+    stw     0, 0x10(1)              # WPADProbe returns 0
+    lwz     0, 0x90(1)
+    mtctr   0
+    lwz     0, 0x8C(1)
+    mtcr    0
+    lwz     0, 0x88(1)
+    mtlr    0
+    lmw     3, 0x10(1)
+    addi    1, 1, 0xA0
+    blr
+2:
+    lwz     0, 0x90(1)
+    mtctr   0
+    lwz     0, 0x8C(1)
+    mtcr    0
+    lwz     0, 0x88(1)
+    mtlr    0
+    lmw     3, 0x10(1)
+    addi    1, 1, 0xA0
+probe_orig:
+    nop
+probe_hi:
+    lis     0, 0
+probe_lo:
+    ori     0, 0, 0
+    mtctr   0
+    bctr
+
     # Scratch area, zeroed. Offsets (mirrored in gc_feed.c):
     #   +0x00  per-channel last-probe time base      +0x18  channel being read
     #   +0x14  per-channel consecutive-NOREP counts  +0x1C  KPADRead call counter
-    #   +0x20  SI watchdog time base                 +0x24  feeder hook installed
+    #   +0x20  SI watchdog time base                 +0x24  told the game a remote is there
     #   +0x28  debug block                           +0x60  per-channel feeder state
     .balign 4
 scratch:
