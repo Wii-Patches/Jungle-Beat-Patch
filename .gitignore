@@ -1,0 +1,16 @@
+*.o
+*.bin
+!tools/prebuilt/*.bin
+temp.o
+temp.bin
+__pycache__/
+*.pyc
+.DS_Store
+dumps/
+build/
+pyinst_dist/
+*.wbfs
+*.iso
+*.bak
+hw_test_routine.py
+patch_wbfs.py

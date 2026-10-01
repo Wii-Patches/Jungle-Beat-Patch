@@ -1,0 +1,55 @@
+"""Per-region addresses for the USA, European and Japanese releases.
+
+Everything here was found by reading the USA main.dol in Ghidra and then
+matching the surrounding code (branch targets and immediates masked out)
+against the other two DOLs; each match was unique. The Classic Controller
+hook sites come straight from Vague Rant's per-region Gecko codes.
+"""
+
+SCRATCH = 0x80001820        # start of the patch's DOL text section
+SCRATCH_BYTES = 0x180       # zeroed data at the front of the section
+TEXT_LIMIT = 0x80003000     # the OS's low-memory globals start here
+
+
+class Region:
+    def __init__(self, disc_id, name, gecko, **addrs):
+        self.disc_id = disc_id
+        self.name = name
+        self.gecko = gecko              # codes/<gecko>.ini
+        self.__dict__.update(addrs)
+
+    def __repr__(self):
+        return f'{self.name} ({self.disc_id})'
+
+
+REGIONS = {
+    'R49E01': Region(
+        'R49E01', 'USA', 'R49E01.ini',
+        kpad_read=0x8034DDE4,           # KPADReadEx: after KPADRead's two `li` + `b`
+        si_state=0x804770A0,            # si:: busy flag, SIPOLL shadow, types at +0x18
+        si_gettype=0x8031B940,
+        os_disable=0x803118F8,
+        os_restore=0x80311920,
+        bubble_ptr=0x80C21040,          # EventDirector data pointer (Vague Rant)
+    ),
+    'R49P01': Region(
+        'R49P01', 'Europe', 'R49P01.ini',
+        kpad_read=0x8034E4A4,
+        si_state=0x8047ABA0,
+        si_gettype=0x8031C000,
+        os_disable=0x80311FB8,
+        os_restore=0x80311FE0,
+        bubble_ptr=0x80C24B80,
+    ),
+    'R49J01': Region(
+        'R49J01', 'Japan', 'R49J01.ini',
+        kpad_read=0x8034CCA4,
+        si_state=0x804763E0,
+        si_gettype=0x8031A800,
+        os_disable=0x803107B8,
+        os_restore=0x803107E0,
+        bubble_ptr=0x80C20360,
+    ),
+}
+
+KPAD_READ_PREIMAGE = 0x9421FEF0         # stwu r1,-0x110(r1)
