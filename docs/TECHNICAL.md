@@ -112,6 +112,20 @@ other repository:
 - A real remote connecting later is noticed and takes over; unplugging the pad
   tells the game the remote has gone.
 
+#### Menus scrolling by themselves
+
+With a real Wii Remote and a pad, the library keeps comparing the channel's
+extension with each queued sample's. The feeder reports a Nunchuk on every
+status but the samples a bare remote queues say "no extension", so the library
+saw an extension being plugged and pulled every other frame, threw away all but
+the newest sample, and cleared its state: the stick read full deflection on one
+frame and zero on the next, and a menu moved on every change. `unify_ring()`
+rewrites the queued samples (and the channel) to say Nunchuk too, and when the
+remote has nothing new for a frame one resting sample is queued so the library
+never hands the game an error status. Measured in Dolphin: the first status of a
+`KPADRead` was valid 66 times in 118 before, 148 in 150 after, and one tap of the
+stick moves a menu cursor exactly one step.
+
 The game has no multiplayer mode (its four-channel input loop is generic), so
 ports 2-4 are not wired up.
 

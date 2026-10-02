@@ -32,6 +32,7 @@ typedef unsigned char u8;
 /* scratch layout, mirrored in tools/jbpatch.py */
 #define CHAN_OFF    0x18
 #define SEQ_OFF     0x1C                /* bumped by the poller once per KPADRead call */
+#define ABSENT_OFF  0x50                /* since when the pad has been missing */
 #define FAKED_OFF   0x24                /* we told the game a Wii Remote + Nunchuk is connected */
 #define DEBUG_OFF   0x28                /* type, INBUFH, INBUFL, call count, event counters */
 #define STATE_OFF   0x60
@@ -69,6 +70,8 @@ typedef unsigned char u8;
 #define WM_MINUS    0x1000
 #define NC_Z        0x2000
 #define WM_HOME     0x8000
+#define CC_SWING    0x0040              /* pseudo bits the Classic Controller hooks keep in */
+#define CC_SHAKE    0x0080              /* hold/trig for the Y and X buttons */
 
 #define STICK_DEAD  18                  /* raw counts around centre */
 #define STICK_MAX   88
@@ -238,17 +241,24 @@ idle:
     return 0;
 }
 
-/* Clap and shake as acceleration: the same square wave the Classic
- * Controller hooks use (three samples one way, one at rest, three the other
- * way), because the game counts a shake from the change between frames and
- * the library delivers several samples per frame. A single clap is one call's
- * worth of the same value. */
-static u32 motion(struct state *st, const struct pad *p)
+/* Clap and shake as acceleration. The game finds a clap or a shake in the
+ * history of the Wii Remote's (or Nunchuk's) acceleration, one entry per
+ * status. A clap is a single status at 3.4 g on every axis, as the Classic
+ * Controller hooks send it; the next clap goes the other way, so clapping to a
+ * beat also reads as a shake. A shake is the square wave those hooks use:
+ * three statuses one way, one at rest, three the other way, because the
+ * library delivers several statuses per frame. */
+static u32 motion(u8 *S, struct state *st, const struct pad *p)
 {
     u32 acc = 0;
 
     if (p->swing) {
-        acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;
+        if (st->swing_seq != st->seq) { /* the first status of this KPADRead call only */
+            st->swing_seq = st->seq;
+            W(S, DEBUG_OFF + 0x1C)++;
+            acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;
+            st->shake_neg ^= 1;
+        }
     } else if (p->shake) {
         if (++st->shake_cnt <= 3) {
             acc = st->shake_neg ? (SWING_F32 | 0x80000000u) : SWING_F32;
@@ -262,14 +272,34 @@ static u32 motion(struct state *st, const struct pad *p)
     return acc;
 }
 
-static void count_clap(u8 *S, struct state *st, const struct pad *p)
+/* the sample ring slot `i` of a channel's KPAD state */
+static u8 *ring_slot(u8 *b, u32 i)
 {
-    if (p->swing && st->swing_seq != st->seq) {
-        st->swing_seq = st->seq;
-        W(S, DEBUG_OFF + 0x1C)++;
-        st->shake_neg ^= 1;             /* the next clap swings the other way, so clapping to
-                                           a beat shakes the controller too */
+    return i < 0x10 ? b + 0x13C + i * 0x38 : *(u8 **)(b + 0x4BC) + (i - 0x10) * 0x38;
+}
+
+/* gc_feed() leaves each status reporting a Nunchuk, but the samples queued
+ * for the library are a bare remote's. It compares the channel's extension
+ * with every sample's and, finding them different, takes it for an
+ * extension being plugged in or pulled out: it marks the older samples
+ * invalid and clears its state, which the game sees as the stick snapping
+ * to zero and back every other frame (menus scroll as fast as they can).
+ * So make the queued samples say Nunchuk too, whoever queued them. */
+static void unify_ring(u8 *b)
+{
+    u32 total = *(u8 **)(b + 0x4BC) ? W(b, 0x4C0) + 0x10 : 0x10;
+    u32 idx = b[0x13A], cnt = b[0x13B], n, at;
+
+    if (total > 0x400 || idx >= total)
+        return;
+    if (cnt > total)
+        cnt = total;
+    for (n = cnt, at = idx; n--;) {
+        at = at ? at - 1 : total - 1;
+        ring_slot(b, at)[0x28] = 1;
     }
+    if (cnt)
+        b[0x5C] = 1;
 }
 
 void gc_feed(u8 *k, u8 *S)
@@ -283,20 +313,21 @@ void gc_feed(u8 *k, u8 *S)
         return;
     st = (struct state *)(S + STATE_OFF + chan * STATE_SIZE);
     p.libdev = k[0x5C];
+    unify_ring((u8 *)KPAD_BASE + chan * 0x5C0);
     if (!read_pad(S, chan, &p)) {
         st->last_hold = W(k, 0x00);
         st->base_hold = st->last_hold;
         return;
     }
 
+    acc = motion(S, st, &p);
+    if (acc && p.swing)  p.add |= CC_SWING;
+    if (p.shake)         p.add |= CC_SHAKE;
     hold = W(k, 0x00) | p.add;
     W(k, 0x00) = hold;
     W(k, 0x04) = hold & ~st->base_hold;
     W(k, 0x08) = st->base_hold & ~hold;
     st->last_hold = hold;
-
-    acc = motion(st, &p);
-    count_clap(S, st, &p);
 
     /* A pad owns the motion inputs outright. Bongos have no sticks and no
      * accelerometer, so the Wii Remote (and Nunchuk, if there is one) keeps
@@ -310,12 +341,12 @@ void gc_feed(u8 *k, u8 *S)
             W(k, 0x10) = acc;
             W(k, 0x14) = acc;
         }
-    } else if (p.swing) {
+    } else if (p.swing && acc) {
         W(k, 0x0C) = acc;
         W(k, 0x10) = acc;
         W(k, 0x14) = acc;
     }
-    if (!p.bongo || p.swing || p.libdev != 1) {
+    if (!p.bongo || acc || p.libdev != 1) {
         W(k, 0x68) = W(k, 0x0C);        /* Nunchuk acceleration mirrors the Wii Remote */
         W(k, 0x6C) = W(k, 0x10);
         W(k, 0x70) = W(k, 0x14);
@@ -372,45 +403,68 @@ int gc_probe(u32 chan, s32 *type, u8 *S)
  * sample ring -- two, like the library's own readers expect, with the game
  * looking at the second entry for some things -- and let the library process
  * them as usual; gc_feed() then turns each one into the pad's status. */
+
 void gc_inject(u32 chan, u8 *S)
 {
     u8 *b = (u8 *)KPAD_BASE + chan * 0x5C0;
-    u32 total, idx, cnt, i;
+    u32 total, idx, cnt, i, want;
+    int remote;
 
     if (chan != 0)
         return;
-    if (remote_probe(chan) >= 0) {
-        W(S, FAKED_OFF) = 0;            /* a real remote is there: the feeder alone handles it */
-        return;
-    }
+    remote = remote_probe(chan) >= 0;
     if (!pad_present(chan)) {
-        if (W(S, FAKED_OFF)) {          /* the pad went away: the remote did too */
-            W(S, FAKED_OFF) = 0;
-            ((void (*)(u32, s32))CONNECT_CB)(chan, -1);
+        /* The pad can drop out for a moment while the poller re-probes the port,
+         * so only call it gone after a full second. */
+        if (W(S, FAKED_OFF) && !remote) {
+            u32 now = timebase();
+            if (!W(S, ABSENT_OFF))
+                W(S, ABSENT_OFF) = now | 1;
+            else if (now - W(S, ABSENT_OFF) > 1000u * TB_MS) {
+                W(S, FAKED_OFF) = 0;    /* the pad went away: the remote did too */
+                W(S, ABSENT_OFF) = 0;
+                ((void (*)(u32, s32))CONNECT_CB)(chan, -1);
+            }
         }
         return;
     }
-    if (!W(S, FAKED_OFF)) {
-        /* Tell the game what the library would on a connection, so its own
-         * "controller connected" state is right and it doesn't stop to say the
-         * Wii Remote has been disconnected. */
-        W(S, FAKED_OFF) = 1;
-        ((void (*)(u32, s32))CONNECT_CB)(chan, 0);
-    }
-    total = W(b, 0xC0) + 0x10;          /* ring size: 16 inline slots plus the extra array */
+    W(S, ABSENT_OFF) = 0;
+    total = *(u8 **)(b + 0x4BC) ? W(b, 0x4C0) + 0x10 : 0x10;   /* 16 inline slots plus the extra array */
+    if (total > 0x400)
+        return;
     idx = b[0x13A];
     cnt = b[0x13B];
-    if (cnt >= 2 || idx >= total)
-        return;
-    for (i = 0; i < 2; i++) {
-        u8 *s = idx < 0x10 ? b + 0x13C + idx * 0x38 : *(u8 **)(b + 0xBC) + (idx - 0x10) * 0x38;
-        u32 j;
-        for (j = 0; j < 0x38; j += 4)
-            W(s, j) = 0;
-        s[7] = 0x68;                    /* what a resting remote reports on Z */
-        s[0x36] = 1;
-        idx = idx + 1 >= total ? 0 : idx + 1;
+    want = 0;
+    if (remote) {
+        W(S, FAKED_OFF) = 0;
+        if (cnt == 0)
+            want = 1;                   /* a frame the remote had nothing new for: the library
+                                           would hand the game an error status, which reads as
+                                           the stick snapping to zero. Give it a resting one. */
+    } else {
+        if (!W(S, FAKED_OFF)) {
+            /* Tell the game what the library would on a connection, so its own
+             * "controller connected" state is right and it doesn't stop to say
+             * the Wii Remote has been disconnected. */
+            W(S, FAKED_OFF) = 1;
+            ((void (*)(u32, s32))CONNECT_CB)(chan, 0);
+        }
+        if (cnt < 2)
+            want = 2 - cnt;
     }
-    b[0x13A] = idx;
-    b[0x13B] = cnt + 2;
+    if (want && idx < total) {
+        for (i = 0; i < want; i++) {
+            u8 *s = ring_slot(b, idx);
+            u32 j;
+            for (j = 0; j < 0x38; j += 4)
+                W(s, j) = 0;
+            s[7] = 0x68;                /* what a resting remote reports on Z */
+            s[0x28] = 1;
+            s[0x36] = 1;
+            idx = idx + 1 >= total ? 0 : idx + 1;
+        }
+        b[0x13A] = idx;
+        b[0x13B] = cnt + want;
+    }
+    unify_ring((u8 *)KPAD_BASE + chan * 0x5C0);
 }
