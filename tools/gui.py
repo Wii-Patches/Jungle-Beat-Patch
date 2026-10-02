@@ -120,6 +120,12 @@ def run_patch(image_path, classic, gamecube, log, done):
         done(False, str(e))
 
 
+def asset(name):
+    if getattr(sys, 'frozen', False):
+        return os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(sys.executable)), 'assets', name)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', name)
+
+
 BASE = TkinterDnD.Tk if HAVE_DND else tk.Tk
 
 
@@ -127,12 +133,18 @@ class App(BASE):
     def __init__(self):
         super().__init__()
         self.title('Jungle Beat Controller Patcher')
-        self.geometry('560x500')
+        self.geometry('560x600')
         self.msgq = queue.Queue()
         self.busy = False
 
+        try:
+            img = tk.PhotoImage(file=asset('logo.png'))
+            self.logo = img.subsample(max(1, img.width() // 260))
+            tk.Label(self, image=self.logo).pack(pady=(10, 0))
+        except Exception:                              # the window is fine without its logo
+            pass
         tk.Label(self, text='Donkey Kong Jungle Beat · USA / Europe / Japan',
-                 font=('TkDefaultFont', 11, 'bold')).pack(fill='x', padx=10, pady=(10, 0))
+                 font=('TkDefaultFont', 11, 'bold')).pack(fill='x', padx=10, pady=(4, 0))
 
         opts = tk.LabelFrame(self, text='Add support for')
         opts.pack(fill='x', padx=10, pady=(10, 0))

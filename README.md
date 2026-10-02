@@ -1,5 +1,7 @@
 # Jungle Beat Patch
 
+![Donkey Kong Jungle Beat](assets/logo.png)
+
 Play the Wii release of **Donkey Kong Jungle Beat** with a **GameCube
 controller**, a set of **DK Bongos**, or a **Classic Controller** — instead of
 a Wii Remote and Nunchuk. Works with the USA (`R49E01`), European (`R49P01`)

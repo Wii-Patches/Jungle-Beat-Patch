@@ -95,7 +95,7 @@ jobs:
           pyinstaller --name Jungle-Beat-Patcher --windowed --noconfirm \
             --collect-all tkinterdnd2 \
             --icon assets/icon.icns --target-architecture universal2 \
-            --paths tools --add-data codes:codes \
+            --paths tools --add-data codes:codes --add-data assets/logo.png:assets \
             --add-data tools/prebuilt:tools/prebuilt \
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt "pyinst_dist/Jungle-Beat-Patcher.app/Contents/Resources/wit-gpl-2.0.txt"
@@ -109,7 +109,7 @@ jobs:
           for f in wit_bin/*; do BINS="$BINS --add-binary $f:."; done
           pyinstaller --name Jungle-Beat-Patcher --windowed --noconfirm \
             --collect-all tkinterdnd2 \
-            --paths tools --add-data codes:codes \
+            --paths tools --add-data codes:codes --add-data assets/logo.png:assets \
             --add-data tools/prebuilt:tools/prebuilt \
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt pyinst_dist/Jungle-Beat-Patcher/
@@ -125,7 +125,7 @@ jobs:
           pyinstaller --name Jungle-Beat-Patcher --windowed --noconfirm \
             --collect-all tkinterdnd2 \
             --icon assets/icon.ico \
-            --paths tools --add-data "codes;codes" \
+            --paths tools --add-data "codes;codes" --add-data "assets/logo.png;assets" \
             --add-data "tools/prebuilt;tools/prebuilt" \
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt pyinst_dist/Jungle-Beat-Patcher/
