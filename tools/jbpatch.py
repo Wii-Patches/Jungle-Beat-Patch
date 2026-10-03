@@ -67,7 +67,7 @@ def lis_ori(value):
 
 def detect_region(dol, disc_id=None):
     """The region whose hook sites in `dol` all hold the retail instructions."""
-    candidates = [REGIONS[disc_id]] if disc_id else list(REGIONS.values())
+    candidates = [r for r in REGIONS.values() if not disc_id or r.disc_id[:4] == disc_id[:4]]
     problems = []
     for region in candidates:
         (waddr, _), hooks = load_gecko(region)

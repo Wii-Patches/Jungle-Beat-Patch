@@ -46,6 +46,16 @@ class PatchTests(unittest.TestCase):
             result = jbpatch.inject(src, dst, disc_id=region.disc_id, **kw)
             return result, Dol(dst), Dol(src)
 
+    def test_modded_id4_still_verifies_code(self):
+        region = REGIONS['R49E01']
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = os.path.join(tmp, 'in.dol'), os.path.join(tmp, 'out.dol')
+            with open(src, 'wb') as stream:
+                stream.write(skeleton(region))
+            self.assertIs(jbpatch.inject(src, dst, disc_id='R49E99')[3], region)
+            with self.assertRaises(AssertionError):
+                jbpatch.inject(src, dst, disc_id='R49P99')
+
     def test_blobs_match_sources(self):
         data = json.load(open(jbpatch.BLOBS))
         self.assertEqual(data['sha256'], build_blobs.digest(),

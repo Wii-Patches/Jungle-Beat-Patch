@@ -23,6 +23,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from disc_ids import match_disc_id
 import jbpatch
 from regions import REGIONS
 
@@ -81,18 +82,19 @@ def run_patch(image_path, classic, gamecube, log, done):
             disc_id = read_disc_id(fst)
             if not disc_id:
                 raise RuntimeError('could not read sys/boot.bin from the extracted disc')
-            if disc_id not in REGIONS:
+            region = match_disc_id(disc_id, REGIONS)
+            if region is None:
                 raise RuntimeError(
                     'disc id %s is not a supported target (%s)' % (disc_id, ', '.join(
                         '%s %s' % (r.disc_id, r.name) for r in REGIONS.values())))
-            log('disc: %s (%s)' % (disc_id, REGIONS[disc_id].name))
+            log('disc: %s (%s)' % (disc_id, REGIONS[region].name))
 
             dol_path = find_file(fst, 'main.dol')
             if not dol_path or os.path.basename(os.path.dirname(dol_path)) != 'sys':
                 raise RuntimeError('could not find sys/main.dol in the extracted disc')
 
             patched_dol = dol_path + '.patched'
-            section, sites, size, _ = jbpatch.inject(dol_path, patched_dol, disc_id=disc_id,
+            section, sites, size, _ = jbpatch.inject(dol_path, patched_dol, disc_id=region,
                                                      classic=classic, gamecube=gamecube)
             os.replace(patched_dol, dol_path)
             log('  injected %d hooks into DOL text section %d (%d bytes)' %
