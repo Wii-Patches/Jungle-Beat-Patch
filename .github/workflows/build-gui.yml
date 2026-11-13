@@ -100,7 +100,7 @@ jobs:
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt "pyinst_dist/Jungle-Beat-Patcher.app/Contents/Resources/wit-gpl-2.0.txt"
           cd pyinst_dist
-          zip -qr "../Jungle-Beat-Patcher-${{ matrix.target }}.zip" Jungle-Beat-Patcher.app
+          zip -qr "../Jungle-Beat-ISO-Patcher-${{ matrix.target }}.zip" Jungle-Beat-Patcher.app
 
       - name: Build app (Linux)
         if: matrix.target == 'linux-x86_64'
@@ -114,7 +114,7 @@ jobs:
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt pyinst_dist/Jungle-Beat-Patcher/
           cd pyinst_dist
-          tar -czf "../Jungle-Beat-Patcher-${{ matrix.target }}.tar.gz" Jungle-Beat-Patcher
+          tar -czf "../Jungle-Beat-ISO-Patcher-${{ matrix.target }}.tar.gz" Jungle-Beat-Patcher
 
       - name: Build app (Windows)
         if: matrix.target == 'windows-x86_64'
@@ -130,19 +130,19 @@ jobs:
             $BINS --distpath pyinst_dist tools/gui.py
           cp wit-gpl-2.0.txt pyinst_dist/Jungle-Beat-Patcher/
           cd pyinst_dist
-          7z a "../Jungle-Beat-Patcher-${{ matrix.target }}.zip" Jungle-Beat-Patcher \
-            || powershell -Command "Compress-Archive -Path Jungle-Beat-Patcher -DestinationPath ../Jungle-Beat-Patcher-${{ matrix.target }}.zip"
+          7z a "../Jungle-Beat-ISO-Patcher-${{ matrix.target }}.zip" Jungle-Beat-Patcher \
+            || powershell -Command "Compress-Archive -Path Jungle-Beat-Patcher -DestinationPath ../Jungle-Beat-ISO-Patcher-${{ matrix.target }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Jungle-Beat-Patcher-${{ matrix.target }}
-          path: Jungle-Beat-Patcher-${{ matrix.target }}.*
+          name: Jungle-Beat-ISO-Patcher-${{ matrix.target }}
+          path: Jungle-Beat-ISO-Patcher-${{ matrix.target }}.*
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: Jungle-Beat-Patcher-${{ matrix.target }}.*
+          files: Jungle-Beat-ISO-Patcher-${{ matrix.target }}.*
 
   patch-files:
     needs: test
